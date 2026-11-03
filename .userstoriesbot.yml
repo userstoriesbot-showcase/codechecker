@@ -1,0 +1,31 @@
+# Showcase fork only (never part of an upstream pull request).
+# install puts the released server (6.29.1, same API 6.74 as master) in a
+# venv, unpacks the Thrift JS stubs last committed upstream for API 6.74
+# (the stubs are no longer tracked and need Docker to generate), builds this
+# branch's UI without minification (minified builds exceed 3 GB) and swaps it
+# into the server's www folder. The server runs with no authentication on a
+# fresh SQLite workspace and serves both the UI and the API on {port}.
+# The cold webpack build peaks near 2.3 GB of heap; 2304 MB thrashes and
+# sometimes runs out; 2560 MB with --no-cache peaked at about 2.5 GB container memory.
+version: 1
+app:
+  install: >-
+    python3 -m venv --without-pip .ccvenv
+    && curl -sSL https://bootstrap.pypa.io/get-pip.py | .ccvenv/bin/python - -q
+    && .ccvenv/bin/pip install -q codechecker==6.29.1
+    && mkdir -p codechecker_api/js
+    && curl -sSL https://raw.githubusercontent.com/Ericsson/codechecker/7e281a9bbbee753dad9752e0d40d71973149a668/web/api/js/codechecker-api-node/dist/codechecker-api-6.74.0.tgz | tar xz -C codechecker_api/js --strip-components=2 package/lib
+    && echo "module.exports = require('./codechecker_api_shared_types');" > codechecker_api/js/shared_types.js
+    && (cd web/server/vue-cli && npm ci --no-audit --no-fund && npm run build -- --no-optimization-minimize --no-cache)
+    && rm -rf .ccvenv/share/codechecker/www/*
+    && cp -r web/server/vue-cli/dist/. .ccvenv/share/codechecker/www/
+  start: .ccvenv/bin/CodeChecker server --workspace /tmp/cc-workspace --host 0.0.0.0 --port {port}
+  url: http://localhost:{port}
+  readyPath: /login
+  readyStatus: 200
+  runtime: node22
+  env:
+    NODE_OPTIONS: --max-old-space-size=2560
+demo:
+  maxVideos: 1
+  beforePass: true
